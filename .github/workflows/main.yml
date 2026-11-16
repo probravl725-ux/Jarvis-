@@ -1,32 +1,28 @@
-plugins {
-    id("com.android.application") version "8.5.2"
-    id("org.jetbrains.kotlin.android") version "1.9.24"
-}
+name: Build APK
 
-android {
-    namespace = "com.sergey.jarvis"
-    compileSdk = 34
+on:
+  push:
+  workflow_dispatch:
 
-    defaultConfig {
-        applicationId = "com.sergey.jarvis"
-        minSdk = 26
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
-    }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-    sourceSets {
-        getByName("main") {
-            manifest.srcFile("AndroidManifest.xml")
-            java.srcDirs("src")
-        }
-    }
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-}
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-apk
+          path: build/outputs/apk/debug/*.apk
