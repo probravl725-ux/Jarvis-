@@ -1,4 +1,4 @@
-package com.sergey.jarvis
+Package com.sergey.jarvis
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -211,37 +211,37 @@ class VoiceService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun callGemini(key: String, prompt: String): String {
-        // Передаем ключ через параметр ?key= и используем актуальную модель gemini-2.5-flash
-        val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$key")
+        val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent")
         val conn = url.openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
         conn.connectTimeout = 15000
         conn.readTimeout = 20000
         conn.doOutput = true
         conn.setRequestProperty("Content-Type", "application/json")
+        conn.setRequestProperty("x-goog-api-key", key)
 
-        val systemPrompt = "Ты голосовой ассистент Джарвис. Отвечай по-русски, коротко, одним-двумя предложениями, без markdown и списков."
-        val body = JSONObject().apply {
-            put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", systemPrompt))))
-            put("contents", JSONArray().put(
-                JSONObject()
-                    .put("role", "user")
-                    .put("parts", JSONArray().put(JSONObject().put("text", prompt)))
-            ))
-        }
-
+        val system = "Ты голосовой ассистент Джарвис. Отвечай по-русски, коротко, одним-двумя предложениями, без markdown и списков."
+        val body = JSONObject()
+            .put(
+                "systemInstruction",
+                JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system)))
+            )
+            .put(
+                "contents",
+                JSONArray().put(
+                    JSONObject()
+                        .put("role", "user")
+                        .put("parts", JSONArray().put(JSONObject().put("text", prompt)))
+                )
+            )
         conn.outputStream.use { it.write(body.toString().toByteArray()) }
 
-        if (conn.responseCode != 200) {
-            return "Gemini вернул ошибку, проверь ключ"
-        }
-
+        if (conn.responseCode != 200) return "Gemini вернул ошибку, проверь ключ"
         val resp = conn.inputStream.bufferedReader().use { it.readText() }
         val text = JSONObject(resp)
             .getJSONArray("candidates").getJSONObject(0)
             .getJSONObject("content").getJSONArray("parts")
             .getJSONObject(0).getString("text")
-            
         return text.replace("*", "").trim().take(400)
     }
 
@@ -268,4 +268,3 @@ class VoiceService : Service(), TextToSpeech.OnInitListener {
         super.onDestroy()
     }
 }
-
