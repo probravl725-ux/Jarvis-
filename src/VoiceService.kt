@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -25,6 +26,12 @@ import java.util.Locale
 
 class VoiceService : Service(), TextToSpeech.OnInitListener {
 
+    companion object {
+        @Volatile var active = false
+        @Volatile var heard = ""
+        @Volatile var reply = ""
+    }
+
     private val handler = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
@@ -35,6 +42,44 @@ class VoiceService : Service(), TextToSpeech.OnInitListener {
 
     private val wakeWords = listOf("джарвис", "жарвис", "джервис", "jarvis")
     private val openWords = listOf("открой", "запусти", "включи")
+
+    // --- Заглушаем «писк» микрофона при старте и конце прослушивания ---
+    // Поставь true, если писк остаётся (но тогда музыка будет подрезаться на доли секунды)
+    private val muteMusicToo = false
+
+    private val audio by lazy { getSystemService(AudioManager::class.java) }
+    private val mutedByUs = mutableSetOf<Int>()
+    private val unmuteRunnable = Runnable { unmuteBeep() }
+
+    private fun beepStreams(): List<Int> {
+        val list = mutableListOf(AudioManager.STREAM_NOTIFICATION, AudioManager.STREAM_SYSTEM)
+        if (muteMusicToo) list.add(AudioManager.STREAM_MUSIC)
+        return list
+    }
+
+    private fun quiet() {
+        for (st in beepStreams()) {
+            try {
+                if (!audio.isStreamMute(st)) {
+                    audio.adjustStreamVolume(st, AudioManager.ADJUST_MUTE, 0)
+                    mutedByUs.add(st)
+                }
+            } catch (e: Exception) {
+            }
+        }
+        handler.removeCallbacks(unmuteRunnable)
+        handler.postDelayed(unmuteRunnable, 800)
+    }
+
+    private fun unmuteBeep() {
+        for (st in mutedByUs.toList()) {
+            try {
+                audio.adjustStreamVolume(st, AudioManager.ADJUST_UNMUTE, 0)
+            } catch (e: Exception) {
+            }
+        }
+        mutedByUs.clear()
+    }
 
     // Как слово звучит по-русски -> как приложение называется на телефоне
     private val aliases = mapOf(
@@ -76,6 +121,7 @@ class VoiceService : Service(), TextToSpeech.OnInitListener {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         running = true
+        active = true
         handler.post { listen() }
         return START_STICKY
     }
@@ -107,6 +153,7 @@ class VoiceService : Service(), TextToSpeech.OnInitListener {
         i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
         i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+        quiet()
         recognizer?.startListening(i)
     }
 
@@ -115,11 +162,14 @@ class VoiceService : Service(), TextToSpeech.OnInitListener {
         override fun onBeginningOfSpeech() {}
         override fun onRmsChanged(rmsdB: Float) {}
         override fun onBufferReceived(buffer: ByteArray?) {}
-        override fun onEndOfSpeech() {}
+        override fun onEndOfSpeech() {
+            quiet()
+        }
         override fun onPartialResults(partialResults: Bundle?) {}
         override fun onEvent(eventType: Int, params: Bundle?) {}
 
         override fun onError(error: Int) {
+            quiet()
             awaitingCommand = false
             if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
                 stopSelf()
@@ -154,6 +204,7 @@ class VoiceService : Service(), TextToSpeech.OnInitListener {
             speak("Слушаю")
             return
         }
+        heard = cmd
         execute(cmd)
     }
 
@@ -264,6 +315,7 @@ class VoiceService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun speak(text: String) {
+        reply = text
         speaking = true
         recognizer?.cancel()
         if (!ttsReady) {
@@ -277,8 +329,10 @@ class VoiceService : Service(), TextToSpeech.OnInitListener {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        active = false
         running = false
         handler.removeCallbacksAndMessages(null)
+        unmuteBeep()
         recognizer?.destroy()
         recognizer = null
         tts?.stop()
