@@ -3,6 +3,15 @@ plugins {
     id("org.jetbrains.kotlin.android") version "1.9.24"
 }
 
+// Иконка хранится текстом (base64) в файле icon.b64, при сборке превращается в картинку
+val iconText = file("icon.b64")
+if (iconText.exists()) {
+    val iconDir = file("res/mipmap-xxxhdpi")
+    iconDir.mkdirs()
+    file("res/mipmap-xxxhdpi/ic_launcher.webp")
+        .writeBytes(java.util.Base64.getMimeDecoder().decode(iconText.readText().trim()))
+}
+
 android {
     namespace = "com.sergey.jarvis"
     compileSdk = 34
@@ -19,6 +28,7 @@ android {
         getByName("main") {
             manifest.srcFile("AndroidManifest.xml")
             java.srcDirs("src")
+            res.srcDirs("res")
         }
     }
 
