@@ -1,4 +1,4 @@
-Package com.sergey.jarvis
+package com.sergey.jarvis
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -210,16 +210,10 @@ class VoiceService : Service(), TextToSpeech.OnInitListener {
         }.start()
     }
 
-    private fun callGemini(key: String, prompt: String): String {
-        val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent")
-        val conn = url.openConnection() as HttpURLConnection
-        conn.requestMethod = "POST"
-        conn.connectTimeout = 15000
-        conn.readTimeout = 20000
-        conn.doOutput = true
-        conn.setRequestProperty("Content-Type", "application/json")
-        conn.setRequestProperty("x-goog-api-key", key)
+    // Модели пробуем по очереди: если одну отключили, сработает следующая
+    private val geminiModels = listOf("gemini-flash-latest", "gemini-3.1-flash-lite", "gemini-3-flash-preview")
 
+    private fun callGemini(key: String, prompt: String): String {
         val system = "Ты голосовой ассистент Джарвис. Отвечай по-русски, коротко, одним-двумя предложениями, без markdown и списков."
         val body = JSONObject()
             .put(
@@ -234,15 +228,39 @@ class VoiceService : Service(), TextToSpeech.OnInitListener {
                         .put("parts", JSONArray().put(JSONObject().put("text", prompt)))
                 )
             )
-        conn.outputStream.use { it.write(body.toString().toByteArray()) }
+            .toString()
 
-        if (conn.responseCode != 200) return "Gemini вернул ошибку, проверь ключ"
-        val resp = conn.inputStream.bufferedReader().use { it.readText() }
-        val text = JSONObject(resp)
-            .getJSONArray("candidates").getJSONObject(0)
-            .getJSONObject("content").getJSONArray("parts")
-            .getJSONObject(0).getString("text")
-        return text.replace("*", "").trim().take(400)
+        var lastCode = 0
+        for (model in geminiModels) {
+            val url = URL("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 15000
+            conn.readTimeout = 25000
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("x-goog-api-key", key)
+            conn.outputStream.use { it.write(body.toByteArray()) }
+
+            lastCode = conn.responseCode
+            if (lastCode == 200) {
+                val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                val text = JSONObject(resp)
+                    .getJSONArray("candidates").getJSONObject(0)
+                    .getJSONObject("content").getJSONArray("parts")
+                    .getJSONObject(0).getString("text")
+                return text.replace("*", "").trim().take(400)
+            }
+            // 429 и ошибки ключа не лечатся сменой модели
+            if (lastCode == 429 || lastCode == 401 || lastCode == 403) break
+        }
+
+        return when (lastCode) {
+            400, 401, 403 -> "Gemini не принял ключ или недоступен в твоём регионе. Код $lastCode"
+            404 -> "Gemini не нашёл модель. Код 404"
+            429 -> "Лимит Gemini исчерпан. Подожди немного"
+            else -> "Ошибка Gemini. Код $lastCode"
+        }
     }
 
     private fun speak(text: String) {
