@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
     id("com.android.application") version "8.5.2"
     id("org.jetbrains.kotlin.android") version "1.9.24"
@@ -9,7 +11,7 @@ if (iconText.exists()) {
     val iconDir = file("res/mipmap-xxxhdpi")
     iconDir.mkdirs()
     file("res/mipmap-xxxhdpi/ic_launcher.webp")
-        .writeBytes(java.util.Base64.getMimeDecoder().decode(iconText.readText().trim()))
+        .writeBytes(Base64.getMimeDecoder().decode(iconText.readText().trim()))
 }
 
 android {
