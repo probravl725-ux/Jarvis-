@@ -24,6 +24,7 @@
     </queries>
 
     <application
+        android:icon="@mipmap/ic_launcher"
         android:label="Джарвис"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
